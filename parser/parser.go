@@ -64,7 +64,7 @@ func NewParser(opts ...Option) (*Parser, error) {
 		p.errorRecoveryLimit = int((^uint(0)) >> 1)
 	}
 	if p.expressionSizeCodePointLimit == 0 {
-		p.expressionSizeCodePointLimit = 300_000
+		p.expressionSizeCodePointLimit = 3000_000
 	}
 	if p.expressionSizeCodePointLimit == -1 {
 		p.expressionSizeCodePointLimit = int((^uint(0)) >> 1)
