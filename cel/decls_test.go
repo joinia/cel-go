@@ -20,17 +20,15 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
-	"google.golang.org/protobuf/proto"
-
-	"github.com/google/cel-go/checker/decls"
+	chkdecls "github.com/google/cel-go/checker/decls"
+	"github.com/google/cel-go/common/decls"
+	"github.com/google/cel-go/common/functions"
 	"github.com/google/cel-go/common/operators"
 	"github.com/google/cel-go/common/overloads"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
-	"github.com/google/cel-go/interpreter/functions"
 
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
@@ -74,11 +72,11 @@ var dispatchTests = []struct {
 	},
 	{
 		expr: "max(unk, unk)",
-		out:  types.Unknown{42},
+		out:  types.NewUnknown(42, nil),
 	},
 	{
 		expr: "max(unk, unk, unk)",
-		out:  types.Unknown{42},
+		out:  types.NewUnknown(42, nil),
 	},
 }
 
@@ -148,8 +146,14 @@ func TestFunctionMerge(t *testing.T) {
 		t.Errorf("prg.Eval() got %v, wanted %v", out, want)
 	}
 
-	_, err = NewCustomEnv(size, size)
-	if err == nil || !strings.Contains(err.Error(), "already has a binding") {
+	sizeBad := Function("size",
+		Overload("size_vector", []*Type{OpaqueType("vector", TypeParamType("V"))}, IntType),
+		MemberOverload("vector_size", []*Type{OpaqueType("vector", TypeParamType("V"))}, IntType),
+		SingletonBinaryBinding(func(lhs, rhs ref.Val) ref.Val {
+			return nil
+		}))
+	_, err = NewCustomEnv(size, sizeBad)
+	if err == nil || !strings.Contains(err.Error(), "already has a singleton binding") {
 		t.Errorf("NewCustomEnv(size, size) did not produce the expected error: %v", err)
 	}
 	e, err = NewCustomEnv(size,
@@ -221,28 +225,12 @@ func TestFunctionMergeCollision(t *testing.T) {
 }
 
 func TestFunctionNoOverloads(t *testing.T) {
-	_, err := NewCustomEnv(Function("right", SingletonBinaryBinding(func(arg1, arg2 ref.Val) ref.Val {
-		return arg2
-	})))
-	if err == nil || !strings.Contains(err.Error(), "must have at least one overload") {
-		t.Errorf("got %v for the error state, wanted 'no overloads'", err)
-	}
-}
-
-func TestSingletonUnaryBindingRedefinition(t *testing.T) {
 	_, err := NewCustomEnv(
-		Function("id",
-			Overload("id_any", []*Type{AnyType}, AnyType),
-			SingletonUnaryBinding(func(arg ref.Val) ref.Val {
-				return arg
-			}),
-			SingletonUnaryBinding(func(arg ref.Val) ref.Val {
-				return arg
-			}),
-		),
-	)
-	if err == nil || !strings.Contains(err.Error(), "already has a singleton binding") {
-		t.Errorf("NewCustomEnv() got %v, wanted already has a singleton singleton binding", err)
+		Function("right", SingletonBinaryBinding(func(arg1, arg2 ref.Val) ref.Val {
+			return arg2
+		})))
+	if err == nil || !strings.Contains(err.Error(), "must have at least one overload") {
+		t.Errorf("got %v, wanted 'must have at least one overload'", err)
 	}
 }
 
@@ -301,22 +289,6 @@ func TestSingletonUnaryBindingParameterized(t *testing.T) {
 	}
 }
 
-func TestSingletonBinaryBindingRedefinition(t *testing.T) {
-	_, err := NewCustomEnv(
-		Function("right",
-			Overload("right_double_double", []*Type{DoubleType, DoubleType}, DoubleType),
-			SingletonBinaryBinding(func(arg1, arg2 ref.Val) ref.Val {
-				return arg2
-			}, traits.ComparerType),
-			SingletonBinaryBinding(func(arg1, arg2 ref.Val) ref.Val {
-				return arg2
-			}),
-		))
-	if err == nil || !strings.Contains(err.Error(), "already has a singleton binding") {
-		t.Errorf("NewCustomEnv() got %v, wanted already has a singleton binding", err)
-	}
-}
-
 func TestSingletonBinaryBinding(t *testing.T) {
 	_, err := NewCustomEnv(
 		Function("right",
@@ -330,23 +302,6 @@ func TestSingletonBinaryBinding(t *testing.T) {
 	)
 	if err != nil {
 		t.Errorf("NewCustomEnv() failed: %v", err)
-	}
-}
-
-func TestSingletonFunctionBindingRedefinition(t *testing.T) {
-	_, err := NewCustomEnv(
-		Function("id",
-			Overload("id_any", []*Type{AnyType}, AnyType),
-			SingletonFunctionBinding(func(args ...ref.Val) ref.Val {
-				return args[0]
-			}, traits.ComparerType),
-			SingletonFunctionBinding(func(args ...ref.Val) ref.Val {
-				return args[0]
-			}, traits.ComparerType),
-		),
-	)
-	if err == nil || !strings.Contains(err.Error(), "already has a singleton binding") {
-		t.Errorf("NewCustomEnv() got %v, wanted already has a singleton binding", err)
 	}
 }
 
@@ -373,7 +328,7 @@ func TestSingletonFunctionBinding(t *testing.T) {
 						// With custom overload implementations, a function guard is automatically
 						// added to the function to validate that the runtime types are compatible
 						// to provide some basic invocation protections.
-						return noSuchOverload("max", args...)
+						return decls.MaybeNoSuchOverload("max", args...)
 					}
 					if i > max {
 						max = i
@@ -398,21 +353,6 @@ func TestSingletonFunctionBinding(t *testing.T) {
 		t.Run(fmt.Sprintf("Compile(%s)", tc.expr), func(t *testing.T) {
 			testCompile(t, env, tc.expr, tc.out)
 		})
-	}
-}
-
-func TestUnaryBindingRedefinition(t *testing.T) {
-	_, err := NewCustomEnv(
-		Function("dyn",
-			Overload("dyn", []*Type{DynType}, DynType,
-				UnaryBinding(func(arg ref.Val) ref.Val { return arg }),
-				// redefinition.
-				UnaryBinding(func(arg ref.Val) ref.Val { return arg }),
-			),
-		),
-	)
-	if err == nil || !strings.Contains(err.Error(), "already has a binding") {
-		t.Errorf("redefinition of function impl did not produce expected error: %v", err)
 	}
 }
 
@@ -455,51 +395,12 @@ func TestUnaryBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Program() failed: %v", err)
 	}
-	out, _, err := prg.Eval(map[string]any{"x": types.Unknown{1}})
+	out, _, err := prg.Eval(map[string]any{"x": types.NewUnknown(1, nil)})
 	if err != nil {
 		t.Fatalf("prg.Eval(x=unk) failed: %v", err)
 	}
-	if !reflect.DeepEqual(out, types.Unknown{1}) {
+	if !types.NewUnknown(1, nil).Contains(out.(*types.Unknown)) {
 		t.Errorf("prg.Eval(x=unk) returned %v, wanted unknown{1}", out)
-	}
-}
-
-func TestBinaryBindingRedefinition(t *testing.T) {
-	_, err := NewCustomEnv(
-		Function("right",
-			Overload("right_int_int", []*Type{IntType, IntType}, IntType,
-				BinaryBinding(func(arg1, arg2 ref.Val) ref.Val { return arg2 }),
-				// redefinition.
-				BinaryBinding(func(arg1, arg2 ref.Val) ref.Val { return arg2 }),
-			),
-		),
-	)
-	if err == nil || !strings.Contains(err.Error(), "already has a binding") {
-		t.Errorf("redefinition of function impl did not produce expected error: %v", err)
-	}
-
-	_, err = NewCustomEnv(
-		Function("right",
-			Overload("right_int_int", []*Type{IntType, IntType}, IntType,
-				BinaryBinding(func(arg1, arg2 ref.Val) ref.Val { return arg2 }),
-			),
-			Overload("right_int_int", []*Type{IntType, IntType, DurationType}, IntType,
-				FunctionBinding(func(args ...ref.Val) ref.Val { return args[0] }),
-			),
-		),
-	)
-	if err == nil || !strings.Contains(err.Error(), "multiple definitions") {
-		t.Errorf("redefinition of right_int_int did not produce expected error: %v", err)
-	}
-
-	_, err = NewCustomEnv(
-		Function("elem_type",
-			Overload("elem_type_list", []*Type{ListType(TypeParamType("T"))}, TypeType),
-			Overload("elem_type_list", []*Type{ListType(DynType)}, TypeType),
-		),
-	)
-	if err == nil || !strings.Contains(err.Error(), "multiple definitions") {
-		t.Errorf("redefinition of elem_type_list did not produce expected error: %v", err)
 	}
 }
 
@@ -538,14 +439,14 @@ func TestBinaryBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Program() failed: %v", err)
 	}
-	out, _, err := prg.Eval(map[string]any{"x": types.Unknown{1}, "y": 1})
+	out, _, err := prg.Eval(map[string]any{"x": types.NewUnknown(1, nil), "y": 1})
 	if err != nil {
 		t.Fatalf("prg.Eval(x=unk) failed: %v", err)
 	}
 	if !reflect.DeepEqual(out, types.IntOne) {
 		t.Errorf("prg.Eval(x=unk, y=1) returned %v, wanted 1", out)
 	}
-	out, _, err = prg.Eval(map[string]any{"x": 2, "y": types.Unknown{2}})
+	out, _, err = prg.Eval(map[string]any{"x": 2, "y": types.NewUnknown(2, nil)})
 	if err != nil {
 		t.Fatalf("prg.Eval(x=2, y=unk) failed: %v", err)
 	}
@@ -570,21 +471,6 @@ func TestBinaryBinding(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "function bound to non-binary overload") {
 		t.Errorf("bad binding did not produce expected error: %v", err)
-	}
-}
-
-func TestFunctionBindingRedefinition(t *testing.T) {
-	_, err := NewCustomEnv(
-		Function("right",
-			Overload("right_int_int_int", []*Type{IntType, IntType, IntType}, IntType,
-				FunctionBinding(func(args ...ref.Val) ref.Val { return args[0] }),
-				// redefinition.
-				FunctionBinding(func(args ...ref.Val) ref.Val { return args[1] }),
-			),
-		),
-	)
-	if err == nil || !strings.Contains(err.Error(), "already has a binding") {
-		t.Errorf("redefinition of function impl did not produce expected error: %v", err)
 	}
 }
 
@@ -638,399 +524,164 @@ func TestFunctionBinding(t *testing.T) {
 	}
 }
 
-func TestIsAssignableType(t *testing.T) {
-	if !NullableType(DoubleType).IsAssignableType(NullType) {
-		t.Error("nullable double cannot be assigned from null")
+func TestFunctionDisableDeclaration(t *testing.T) {
+	e, err := NewCustomEnv(
+		Function("disabled",
+			DisableDeclaration(true),
+			Overload("disabled_any", []*Type{BoolType}, BoolType),
+			SingletonFunctionImpl(func(args ...ref.Val) ref.Val {
+				return types.True
+			}),
+		),
+	)
+	if err != nil {
+		t.Fatalf("NewCustomEnv() failed: %v", err)
 	}
-	if !NullableType(DoubleType).IsAssignableType(DoubleType) {
-		t.Error("nullable double cannot be assigned from double")
+	ast, iss := e.Parse("disabled(true)")
+	if iss.Err() != nil {
+		t.Errorf("Parse(disabled(true)) failed: %v", iss.Err())
 	}
-	if !OpaqueType("vector", NullableType(DoubleType)).IsAssignableType(OpaqueType("vector", NullType)) {
-		t.Error("vector(nullable(double)) could not be assigned from vector(null)")
+	prg, err := e.Program(ast)
+	if err != nil {
+		t.Fatalf("Program(ast) failed: %v", err)
 	}
-	if !OpaqueType("vector", DynType).IsAssignableType(OpaqueType("vector", NullableType(IntType))) {
-		t.Error("vector(dyn) could not be assigned from vector(nullable(int))")
+	out, _, err := prg.Eval(NoVars())
+	if err != nil {
+		t.Errorf("disabled runtime binding missing: %v", err)
+	} else if out != types.True {
+		t.Errorf("disabled runtime binding failed: %v", out)
 	}
-	if OpaqueType("vector", NullableType(DoubleType)).IsAssignableType(OpaqueType("vector", IntType)) {
-		t.Error("vector(nullable(double)) should not be assignable from vector(int)")
-	}
-	if OpaqueType("vector", NullableType(DoubleType)).IsAssignableType(OpaqueType("vector", DynType)) {
-		t.Error("vector(nullable(double)) should not be assignable from vector(int)")
-	}
-}
-
-func TestIsAssignableRuntimeType(t *testing.T) {
-	if !NullableType(DoubleType).IsAssignableRuntimeType(types.NullValue) {
-		t.Error("nullable double cannot be assigned from null")
-	}
-	if !NullableType(DoubleType).IsAssignableRuntimeType(types.Double(0.0)) {
-		t.Error("nullable double cannot be assigned from double")
-	}
-	if !MapType(StringType, DurationType).IsAssignableRuntimeType(
-		types.DefaultTypeAdapter.NativeToValue(map[string]time.Duration{})) {
-		t.Error("map(string, duration) not assignable to map at runtime")
-	}
-	if !MapType(StringType, DurationType).IsAssignableRuntimeType(
-		types.DefaultTypeAdapter.NativeToValue(map[string]time.Duration{"one": time.Duration(1)})) {
-		t.Error("map(string, duration) not assignable to map at runtime")
-	}
-	if !MapType(StringType, DynType).IsAssignableRuntimeType(
-		types.DefaultTypeAdapter.NativeToValue(map[string]time.Duration{"one": time.Duration(1)})) {
-		t.Error("map(string, dyn) not assignable to map at runtime")
-	}
-	if MapType(StringType, DynType).IsAssignableRuntimeType(
-		types.DefaultTypeAdapter.NativeToValue(map[int64]time.Duration{1: time.Duration(1)})) {
-		t.Error("map(string, dyn) must not be assignable to map(int, duration) at runtime")
+	_, iss = e.Compile("disabled(true)")
+	if iss.Err() == nil || !strings.Contains(iss.Err().Error(), "undeclared reference to 'disabled'") {
+		t.Errorf("Compile(disabled(true)) got an unexpected error: %v", iss.Err())
 	}
 }
 
-func TestTypeToExprType(t *testing.T) {
-	tests := []struct {
-		in             *Type
-		out            *exprpb.Type
-		unidirectional bool
-	}{
-		{
-			in:  OpaqueType("vector", DoubleType, DoubleType),
-			out: decls.NewAbstractType("vector", decls.Double, decls.Double),
-		},
-		{
-			in:  AnyType,
-			out: decls.Any,
-		},
-		{
-			in:  BoolType,
-			out: decls.Bool,
-		},
-		{
-			in:  BytesType,
-			out: decls.Bytes,
-		},
-		{
-			in:  DoubleType,
-			out: decls.Double,
-		},
-		{
-			in:  DurationType,
-			out: decls.Duration,
-		},
-		{
-			in:  DynType,
-			out: decls.Dyn,
-		},
-		{
-			in:  IntType,
-			out: decls.Int,
-		},
-		{
-			in:  ListType(TypeParamType("T")),
-			out: decls.NewListType(decls.NewTypeParamType("T")),
-		},
-		{
-			in:  MapType(TypeParamType("K"), TypeParamType("V")),
-			out: decls.NewMapType(decls.NewTypeParamType("K"), decls.NewTypeParamType("V")),
-		},
-		{
-			in:  NullType,
-			out: decls.Null,
-		},
-		{
-			in:  ObjectType("google.type.Expr"),
-			out: decls.NewObjectType("google.type.Expr"),
-		},
-		{
-			in:  StringType,
-			out: decls.String,
-		},
-		{
-			in:  TimestampType,
-			out: decls.Timestamp,
-		},
-		{
-			in:  TypeType,
-			out: decls.NewTypeType(decls.Dyn),
-		},
-		{
-			in:  UintType,
-			out: decls.Uint,
-		},
-		{
-			in:  NullableType(BoolType),
-			out: decls.NewWrapperType(decls.Bool),
-		},
-		{
-			in:  NullableType(BytesType),
-			out: decls.NewWrapperType(decls.Bytes),
-		},
-		{
-			in:  NullableType(DoubleType),
-			out: decls.NewWrapperType(decls.Double),
-		},
-		{
-			in:  NullableType(IntType),
-			out: decls.NewWrapperType(decls.Int),
-		},
-		{
-			in:  NullableType(StringType),
-			out: decls.NewWrapperType(decls.String),
-		},
-		{
-			in:  NullableType(UintType),
-			out: decls.NewWrapperType(decls.Uint),
-		},
-		{
-			in:             ObjectType("google.protobuf.Any"),
-			out:            decls.Any,
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.Duration"),
-			out:            decls.Duration,
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.Timestamp"),
-			out:            decls.Timestamp,
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.Value"),
-			out:            decls.Dyn,
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.ListValue"),
-			out:            decls.NewListType(decls.Dyn),
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.Struct"),
-			out:            decls.NewMapType(decls.String, decls.Dyn),
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.BoolValue"),
-			out:            decls.NewWrapperType(decls.Bool),
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.BytesValue"),
-			out:            decls.NewWrapperType(decls.Bytes),
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.DoubleValue"),
-			out:            decls.NewWrapperType(decls.Double),
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.FloatValue"),
-			out:            decls.NewWrapperType(decls.Double),
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.Int32Value"),
-			out:            decls.NewWrapperType(decls.Int),
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.Int64Value"),
-			out:            decls.NewWrapperType(decls.Int),
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.StringValue"),
-			out:            decls.NewWrapperType(decls.String),
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.UInt32Value"),
-			out:            decls.NewWrapperType(decls.Uint),
-			unidirectional: true,
-		},
-		{
-			in:             ObjectType("google.protobuf.UInt64Value"),
-			out:            decls.NewWrapperType(decls.Uint),
-			unidirectional: true,
-		},
+func TestFunctionDisableDeclarationMerge(t *testing.T) {
+	e, err := NewCustomEnv(
+		Function("disabled",
+			Overload("disabled_any", []*Type{BoolType}, BoolType),
+		),
+		// Ensure the previously enabled declaration is disabled
+		Function("disabled",
+			DisableDeclaration(true),
+			Overload("disabled_any", []*Type{BoolType}, BoolType,
+				FunctionBinding(func(args ...ref.Val) ref.Val {
+					return types.True
+				})),
+		),
+	)
+	if err != nil {
+		t.Fatalf("NewCustomEnv() failed: %v", err)
 	}
-
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.in.String(), func(t *testing.T) {
-			got, err := TypeToExprType(tc.in)
-			if err != nil {
-				t.Fatalf("TypeToExprType(%v) failed: %v", tc.in, err)
-			}
-			if !proto.Equal(got, tc.out) {
-				t.Errorf("TypeToExprType(%v) returned %v, wanted %v", tc.in, got, tc.out)
-			}
-			if tc.unidirectional {
-				return
-			}
-			roundTrip, err := ExprTypeToType(got)
-			if err != nil {
-				t.Fatalf("ExprTypeToType(%v) failed: %v", got, err)
-			}
-			if !tc.in.equals(roundTrip) {
-				t.Errorf("ExprTypeToType(%v) returned %v, wanted %v", got, roundTrip, tc.in)
-			}
-		})
+	ast, iss := e.Parse("disabled(true)")
+	if iss.Err() != nil {
+		t.Errorf("Parse(disabled(true)) failed: %v", iss.Err())
+	}
+	prg, err := e.Program(ast)
+	if err != nil {
+		t.Fatalf("Program(ast) failed: %v", err)
+	}
+	out, _, err := prg.Eval(NoVars())
+	if err != nil {
+		t.Errorf("disabled runtime binding missing: %v", err)
+	} else if out != types.True {
+		t.Errorf("disabled runtime binding failed: %v", out)
+	}
+	_, iss = e.Compile("disabled(true)")
+	if iss.Err() == nil || !strings.Contains(iss.Err().Error(), "undeclared reference to 'disabled'") {
+		t.Errorf("Compile(disabled(true)) got an unexpected error: %v", iss.Err())
 	}
 }
 
-func TestExprTypeToType(t *testing.T) {
-	tests := []struct {
-		in  *exprpb.Type
-		out *Type
-	}{
-		{
-			in:  decls.NewObjectType("google.protobuf.Any"),
-			out: AnyType,
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.Duration"),
-			out: DurationType,
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.Timestamp"),
-			out: TimestampType,
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.Value"),
-			out: DynType,
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.ListValue"),
-			out: ListType(DynType),
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.Struct"),
-			out: MapType(StringType, DynType),
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.BoolValue"),
-			out: NullableType(BoolType),
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.BytesValue"),
-			out: NullableType(BytesType),
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.DoubleValue"),
-			out: NullableType(DoubleType),
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.FloatValue"),
-			out: NullableType(DoubleType),
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.Int32Value"),
-			out: NullableType(IntType),
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.Int64Value"),
-			out: NullableType(IntType),
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.StringValue"),
-			out: NullableType(StringType),
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.UInt32Value"),
-			out: NullableType(UintType),
-		},
-		{
-			in:  decls.NewObjectType("google.protobuf.UInt64Value"),
-			out: NullableType(UintType),
-		},
+func TestFunctionDisableDeclarationMergeReenable(t *testing.T) {
+	e, err := NewCustomEnv(
+		Function("enabled",
+			DisableDeclaration(true),
+			Overload("enabled_any", []*Type{BoolType}, BoolType),
+		),
+		// Ensure the previously disabled declaration is enabled
+		Function("enabled",
+			DisableDeclaration(false),
+			Overload("enabled_any", []*Type{BoolType}, BoolType,
+				FunctionBinding(func(args ...ref.Val) ref.Val {
+					return types.True
+				})),
+		),
+	)
+	if err != nil {
+		t.Fatalf("NewCustomEnv() failed: %v", err)
 	}
-
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.in.String(), func(t *testing.T) {
-			got, err := ExprTypeToType(tc.in)
-			if err != nil {
-				t.Fatalf("ExprTypeToType(%v) failed: %v", tc.in, err)
-			}
-			if !got.equals(tc.out) {
-				t.Errorf("ExprTypeToType(%v) returned %v, wanted %v", tc.in, got, tc.out)
-			}
-		})
+	ast, iss := e.Parse("enabled(true)")
+	if iss.Err() != nil {
+		t.Errorf("Parse(enabled(true)) failed: %v", iss.Err())
 	}
-}
-
-func TestExprTypeToTypeInvalid(t *testing.T) {
-	tests := []struct {
-		in  *exprpb.Type
-		out string
-	}{
-		{
-			in:  &exprpb.Type{},
-			out: "unsupported type",
-		},
-		{
-			in:  &exprpb.Type{TypeKind: &exprpb.Type_Primitive{}},
-			out: "unsupported primitive type",
-		},
-		{
-			in:  &exprpb.Type{TypeKind: &exprpb.Type_WellKnown{}},
-			out: "unsupported well-known type",
-		},
-		{
-			in:  decls.NewListType(&exprpb.Type{}),
-			out: "unsupported type",
-		},
-		{
-			in:  decls.NewMapType(&exprpb.Type{}, decls.Dyn),
-			out: "unsupported type",
-		},
-		{
-			in:  decls.NewMapType(decls.Dyn, &exprpb.Type{}),
-			out: "unsupported type",
-		},
-		{
-			in:  decls.NewAbstractType("bad", &exprpb.Type{}),
-			out: "unsupported type",
-		},
-		{
-			in:  &exprpb.Type{TypeKind: &exprpb.Type_Wrapper{}},
-			out: "unsupported primitive type",
-		},
+	prg, err := e.Program(ast)
+	if err != nil {
+		t.Fatalf("Program(ast) failed: %v", err)
 	}
-
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.in.String(), func(t *testing.T) {
-			_, err := ExprTypeToType(tc.in)
-			if err == nil || !strings.Contains(err.Error(), tc.out) {
-				t.Fatalf("ExprTypeToType(%v) got %v, wanted error %v", tc.in, err, tc.out)
-			}
-		})
+	out, _, err := prg.Eval(NoVars())
+	if err != nil {
+		t.Errorf("enabled runtime binding missing: %v", err)
+	} else if out != types.True {
+		t.Errorf("enabled runtime binding failed: %v", out)
+	}
+	_, iss = e.Compile("enabled(true)")
+	if iss.Err() != nil {
+		t.Errorf("Compile(enabled(true)) got an unexpected error: %v", iss.Err())
 	}
 }
 
 func TestExprDeclToDeclaration(t *testing.T) {
+	paramT := chkdecls.NewTypeParamType("T")
+	eq, err := ExprDeclToDeclaration(
+		chkdecls.NewFunction(operators.Equals,
+			chkdecls.NewParameterizedOverload(overloads.Equals,
+				[]*exprpb.Type{paramT, paramT}, chkdecls.Bool, []string{"T"})),
+	)
+	if err != nil {
+		t.Fatalf("ExprDeclToDeclaration(equals) failed: %v", err)
+	}
 	size, err := ExprDeclToDeclaration(
-		decls.NewFunction("size", decls.NewOverload("size_string", []*exprpb.Type{decls.String}, decls.Int)),
+		chkdecls.NewFunction(overloads.Size,
+			chkdecls.NewOverload(overloads.SizeString,
+				[]*exprpb.Type{chkdecls.String}, chkdecls.Int),
+			chkdecls.NewInstanceOverload(overloads.SizeStringInst,
+				[]*exprpb.Type{chkdecls.String}, chkdecls.Int)),
 	)
 	if err != nil {
 		t.Fatalf("ExprDeclToDeclaration(size) failed: %v", err)
 	}
-	x, err := ExprDeclToDeclaration(decls.NewVar("x", decls.String))
+	x, err := ExprDeclToDeclaration(chkdecls.NewVar("x", chkdecls.String))
 	if err != nil {
 		t.Fatalf("ExprDeclToDeclaration(x) failed: %v", err)
 	}
-	e, err := NewCustomEnv(size, x)
+	constant, err := ExprDeclToDeclaration(
+		chkdecls.NewConst("constant", chkdecls.Bool, &exprpb.Constant{
+			ConstantKind: &exprpb.Constant_BoolValue{BoolValue: true},
+		}))
+	if err != nil {
+		t.Fatalf("ExprDeclToDeclaration(constant) failed: %v", err)
+	}
+	e, err := NewCustomEnv(size, eq, x, constant)
 	if err != nil {
 		t.Fatalf("NewCustomEnv() failed: %v", err)
 	}
-	ast, iss := e.Compile("size(x)")
+	ast, iss := e.Compile("(size(x) == x.size()) == constant")
 	if iss.Err() != nil {
-		t.Fatalf("Compile(size(x)) failed: %v", iss.Err())
+		t.Fatalf("Compile((size(x) == x.size()) == constant) failed: %v", iss.Err())
 	}
 	prg, err := e.Program(ast, Functions(&functions.Overload{
 		Operator: overloads.SizeString,
+		Unary: func(arg ref.Val) ref.Val {
+			str, ok := arg.(types.String)
+			if !ok {
+				return types.MaybeNoSuchOverloadErr(arg)
+			}
+			return types.Int(len([]rune(string(str))))
+		},
+	}, &functions.Overload{
+		Operator: overloads.SizeStringInst,
 		Unary: func(arg ref.Val) ref.Val {
 			str, ok := arg.(types.String)
 			if !ok {
@@ -1046,8 +697,8 @@ func TestExprDeclToDeclaration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prg.Eval(x=hello) failed: %v", err)
 	}
-	if out.Equal(types.Int(5)) != types.True {
-		t.Errorf("prg.Eval(size(x)) got %v, wanted 5", out)
+	if out != types.True {
+		t.Errorf("prg.Eval((size(x) == x.size()) == constant) got %v, wanted true", out)
 	}
 }
 
@@ -1065,11 +716,23 @@ func TestExprDeclToDeclarationInvalid(t *testing.T) {
 				Name: "bad_var",
 				DeclKind: &exprpb.Decl_Ident{
 					Ident: &exprpb.Decl_IdentDecl{
-						Type: decls.NewListType(&exprpb.Type{}),
+						Type: chkdecls.NewListType(&exprpb.Type{}),
 					},
 				},
 			},
 			out: "unsupported type",
+		},
+		{
+			in: &exprpb.Decl{
+				Name: "bad_var",
+				DeclKind: &exprpb.Decl_Ident{
+					Ident: &exprpb.Decl_IdentDecl{
+						Type:  chkdecls.Bool,
+						Value: &exprpb.Constant{},
+					},
+				},
+			},
+			out: "unsupported constant",
 		},
 		{
 			in: &exprpb.Decl{
@@ -1096,7 +759,7 @@ func TestExprDeclToDeclarationInvalid(t *testing.T) {
 							{
 								OverloadId: "bad_overload",
 								Params:     []*exprpb.Type{{}},
-								ResultType: decls.Dyn,
+								ResultType: chkdecls.Dyn,
 							},
 						},
 					},
@@ -1127,10 +790,10 @@ func testParse(t testing.TB, env *Env, expr string, want any) {
 	if err != nil {
 		t.Fatalf("env.Program() failed: %v", err)
 	}
-	out, _, err := prg.Eval(map[string]any{"err": types.NewErr("error argument"), "unk": types.Unknown{42}})
+	out, _, err := prg.Eval(map[string]any{"err": types.NewErr("error argument"), "unk": types.NewUnknown(42, nil)})
 	switch want := want.(type) {
-	case types.Unknown:
-		if !reflect.DeepEqual(want, out.(types.Unknown)) {
+	case *types.Unknown:
+		if !want.Contains(out.(*types.Unknown)) {
 			t.Errorf("prg.Eval() got %v, wanted %v", out, want)
 		}
 	case ref.Val:
@@ -1154,10 +817,10 @@ func testCompile(t testing.TB, env *Env, expr string, want any) {
 	if err != nil {
 		t.Fatalf("env.Program() failed: %v", err)
 	}
-	out, _, err := prg.Eval(map[string]any{"err": types.NewErr("error argument"), "unk": types.Unknown{42}})
+	out, _, err := prg.Eval(map[string]any{"err": types.NewErr("error argument"), "unk": types.NewUnknown(42, nil)})
 	switch want := want.(type) {
-	case types.Unknown:
-		if !reflect.DeepEqual(want, out.(types.Unknown)) {
+	case *types.Unknown:
+		if !want.Contains(out.(*types.Unknown)) {
 			t.Errorf("prg.Eval() got %v, wanted %v", out, want)
 		}
 	case ref.Val:

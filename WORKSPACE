@@ -13,10 +13,10 @@ http_archive(
 
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "62ca106be173579c0a167deb23358fdfe71ffa1e4cfdddf5582af26520f1c66f",
+    sha256 = "ecba0f04f96b4960a5b250c8e8eeec42281035970aa8852dda73098274d14a1d",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.29.0/bazel-gazelle-v0.29.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.29.0/bazel-gazelle-v0.29.0.tar.gz",
     ],
 )
 
@@ -30,13 +30,13 @@ http_archive(
     ],
 )
 
-# googleapis as of 10/31/2022
+# googleapis as of 08/31/2023
 http_archive(
     name = "com_google_googleapis",
-    sha256 = "d4f8f9ded24ba62605387b8d327297b9013b4f75214023a18a3ffea43ce61146",
-    strip_prefix = "googleapis-5ffa37352ced7e6a48148a334c144a1c3a50e8e0",
+    sha256 = "5c56500adf7b1b7a3a2ee5ca5b77500617ad80afb808e3d3979f582e64c0523d",
+    strip_prefix = "googleapis-25f99371444ea7fd0dc1523ca6925e91cc48a664",
     urls = [
-        "https://github.com/googleapis/googleapis/archive/5ffa37352ced7e6a48148a334c144a1c3a50e8e0.tar.gz",
+        "https://github.com/googleapis/googleapis/archive/25f99371444ea7fd0dc1523ca6925e91cc48a664.tar.gz",
     ],
 )
 
@@ -68,12 +68,22 @@ go_repository(
     tag = "v1.28.1",
 )
 
-# Generated Google APIs protos for Golang 10/27/2022
+# Generated Google APIs protos for Golang 08/03/2023
 go_repository(
-    name = "org_golang_google_genproto",
+    name = "org_golang_google_genproto_googleapis_api",
     build_file_proto_mode = "disable_global",
-    commit = "527a21cfbd71ba0fb6ef7b6a341287e0869af45a",
-    importpath = "google.golang.org/genproto",
+    importpath = "google.golang.org/genproto/googleapis/api",
+    sum = "h1:nIgk/EEq3/YlnmVVXVnm14rC2oxgs1o0ong4sD/rd44=",
+    version = "v0.0.0-20230803162519-f966b187b2e5",
+)
+
+# Generated Google APIs protos for Golang 08/03/2023
+go_repository(
+    name = "org_golang_google_genproto_googleapis_rpc",
+    build_file_proto_mode = "disable_global",
+    importpath = "google.golang.org/genproto/googleapis/rpc",
+    sum = "h1:eSaPbMR4T7WfH9FvABk36NBMacoTUKdWCvV0dx+KfOg=",
+    version = "v0.0.0-20230803162519-f966b187b2e5",
 )
 
 # gRPC deps for v1.49.0 (including x/text and x/net)
@@ -98,18 +108,18 @@ go_repository(
     version = "v0.3.7",
 )
 
-# ANTLR v4.10.1
+# ANTLR v4.12.0
 go_repository(
-    name = "com_github_antlr_antlr4_runtime_go_antlr",
-    importpath = "github.com/antlr/antlr4/runtime/Go/antlr",
-    sum = "h1:yL7+Jz0jTC6yykIK/Wh74gnTJnrGr5AyrNMXuA0gves=",
-    version = "v1.4.10",
+    name = "com_github_antlr_antlr4_runtime_go_antlr_v4",
+    importpath = "github.com/antlr/antlr4/runtime/Go/antlr/v4",
+    sum = "h1:7RFfzj4SSt6nnvCPbCqijJi1nWCd+TqAT3bYCStRC18=",
+    version = "v4.0.0-20230305170008-8188dc5388df",
 )
 
-# CEL Spec deps v0.7.1
+# CEL Spec deps
 go_repository(
     name = "com_google_cel_spec",
-    commit = "ebff24990ecc57209ab9f9b28896fd171848274f",
+    commit = "dd5373cc157f6325421470139b5d55baed09935a",
     importpath = "github.com/google/cel-spec",
 )
 
@@ -124,8 +134,8 @@ go_repository(
 # Readline for repl
 go_repository(
     name = "com_github_chzyer_readline",
+    commit = "62c6fe6193755f722b8b8788aa7357be55a50ff1",  # v1.4
     importpath = "github.com/chzyer/readline",
-    commit = "62c6fe6193755f722b8b8788aa7357be55a50ff1"  # v1.4
 )
 
 # golang.org/x/exp deps
@@ -133,7 +143,7 @@ go_repository(
     name = "org_golang_x_exp",
     importpath = "golang.org/x/exp",
     sum = "h1:+WEEuIdZHnUeJJmEUjyYC2gfUMj69yZXw17EnHg/otA=",
-    version = "v0.0.0-20220722155223-a9213eeb770e"
+    version = "v0.0.0-20220722155223-a9213eeb770e",
 )
 
 # Run the dependencies at the end.  These will silently try to import some

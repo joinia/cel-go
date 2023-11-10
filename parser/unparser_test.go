@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/google/cel-go/common"
+	"github.com/google/cel-go/common/ast"
 	"github.com/google/cel-go/common/operators"
 
 	"google.golang.org/protobuf/proto"
@@ -68,6 +69,11 @@ func TestUnparse(t *testing.T) {
 		{name: "func_in", in: `a in b`},
 		{name: "list_empty", in: `[]`},
 		{name: "list_one", in: `[1]`},
+		{name: "list_ints", in: `[1, 2, 3]`},
+		{name: "list_doubles", in: `[1.0, 2.0, 3.0]`},
+		{name: "list_doubles", in: `[1.1, 2.1, 3.1]`},
+		{name: "list_uints", in: `[1u, 2u, 3u]`},
+		{name: "list_numeric", in: `[1, 2.0, 3u]`},
 		{name: "list_many", in: `["hello, world", "goodbye, world", "sure, why not?"]`},
 		{name: "lit_bytes", in: `b"\303\203\302\277"`},
 		{name: "lit_double", in: `-42.101`},
@@ -99,6 +105,11 @@ func TestUnparse(t *testing.T) {
 		{name: "cond_binop", in: `(x < 5) ? x : 5`},
 		{name: "cond_binop_binop", in: `(x > 5) ? (x - 5) : 0`},
 		{name: "cond_cond_binop", in: `(x > 5) ? ((x > 10) ? (x - 10) : 5) : 0`},
+		{name: "select_opt", in: `a.?b`},
+		{name: "index_opt", in: `a[?b]`},
+		{name: "list_lit_opt", in: `[?a, ?b, c]`},
+		{name: "map_lit_opt", in: `{?a: b, c: d}`},
+		{name: "msg_fields_opt", in: `v1alpha1.Expr{?id: id, call_expr: v1alpha1.Call_Expr{function: "name"}}`},
 
 		// Equivalent expressions form unparse which do not match the originals.
 		{name: "call_add_equiv", in: `a+b-c`, out: `a + b - c`},
@@ -139,6 +150,26 @@ func TestUnparse(t *testing.T) {
 		{
 			name:               "comp_chained",
 			in:                 `[1, 2, 3].map(x, x >= 2, x * 4).filter(x, x <= 10)`,
+			requiresMacroCalls: true,
+		},
+		{
+			name:               "comp_chained_opt",
+			in:                 `[?a, b[?0], c].map(x, x >= 2, x * 4).filter(x, x <= 10)`,
+			requiresMacroCalls: true,
+		},
+		{
+			name:               "comp_map_opt",
+			in:                 `{?a: b[?0]}.map(k, x >= 2, x * 4)`,
+			requiresMacroCalls: true,
+		},
+		{
+			name:               "comp_map_opt",
+			in:                 `{a: has(b.c)}.exists(k, k != "")`,
+			requiresMacroCalls: true,
+		},
+		{
+			name:               "comp_nested",
+			in:                 `{a: [1, 2].all(i > 0)}.exists(k, k != "")`,
 			requiresMacroCalls: true,
 		},
 
@@ -424,6 +455,7 @@ func TestUnparse(t *testing.T) {
 			prsr, err := NewParser(
 				Macros(AllMacros...),
 				PopulateMacroCalls(tc.requiresMacroCalls),
+				EnableOptionalSyntax(true),
 			)
 			if err != nil {
 				t.Fatalf("NewParser() failed: %v", err)
@@ -432,7 +464,7 @@ func TestUnparse(t *testing.T) {
 			if len(iss.GetErrors()) > 0 {
 				t.Fatalf("parser.Parse(%s) failed: %v", tc.in, iss.ToDisplayString())
 			}
-			out, err := Unparse(p.GetExpr(), p.GetSourceInfo(), tc.unparserOptions...)
+			out, err := Unparse(p.Expr(), p.SourceInfo(), tc.unparserOptions...)
 
 			if err != nil {
 				t.Fatalf("Unparse(%s) failed: %v", tc.in, err)
@@ -448,8 +480,14 @@ func TestUnparse(t *testing.T) {
 			if len(iss.GetErrors()) > 0 {
 				t.Fatalf("parser.Parse(%s) roundtrip failed: %v", tc.in, iss.ToDisplayString())
 			}
-			before := p.GetExpr()
-			after := p2.GetExpr()
+			before, err := ast.ExprToProto(p.Expr())
+			if err != nil {
+				t.Fatalf("ast.ExprToProto() failed: %v", err)
+			}
+			after, err := ast.ExprToProto(p2.Expr())
+			if err != nil {
+				t.Fatalf("ast.ExprToProto() failed: %v", err)
+			}
 			if !proto.Equal(before, after) {
 				t.Errorf("Roundtrip Parse() differs from original. Got '%v', wanted '%v'", before, after)
 			}
@@ -472,15 +510,6 @@ func TestUnparseErrors(t *testing.T) {
 		unparserOptions []UnparserOption
 	}{
 		{name: "empty_expr", in: &exprpb.Expr{}, err: errors.New("unsupported expression")},
-		{
-			name: "bad_constant",
-			in: &exprpb.Expr{
-				ExprKind: &exprpb.Expr_ConstExpr{
-					ConstExpr: &exprpb.Constant{},
-				},
-			},
-			err: errors.New("unsupported constant"),
-		},
 		{
 			name: "bad_args",
 			in: &exprpb.Expr{
@@ -569,7 +598,12 @@ func TestUnparseErrors(t *testing.T) {
 	for _, tst := range tests {
 		tc := tst
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := Unparse(tc.in, &exprpb.SourceInfo{}, tc.unparserOptions...)
+			info := ast.NewSourceInfo(nil)
+			e, err := ast.ProtoToExpr(tc.in)
+			if err != nil {
+				t.Fatalf("ast.ProtoToExpr(%v) failed: %v", tc.in, err)
+			}
+			out, err := Unparse(e, info, tc.unparserOptions...)
 			if err == nil {
 				t.Fatalf("Unparse(%v) got %v, wanted error %v", tc.in, out, tc.err)
 			}

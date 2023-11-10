@@ -15,10 +15,12 @@
 package repl
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/cel-go/cel"
 
+	proto2pb "github.com/google/cel-go/test/proto2pb"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
@@ -488,12 +490,88 @@ func TestSetOptionError(t *testing.T) {
 
 func TestProcess(t *testing.T) {
 	var testCases = []struct {
-		name      string
-		commands  []Cmder
-		wantText  string
-		wantExit  bool
-		wantError bool
+		name             string
+		commands         []Cmder
+		wantText         string
+		wantExit         bool
+		wantError        bool
+		ignoreWhitespace bool
 	}{
+		{
+			name: "CompileResult",
+			commands: []Cmder{
+				&compileCmd{
+					expr: "3u",
+				},
+			},
+			wantText: `type_map:  {
+				key:  1
+				value:  {
+				  primitive:  UINT64
+				}
+			  }
+			  source_info:  {
+				location:  "<input>"
+				line_offsets:  3
+				positions:  {
+				  key:  1
+				  value:  0
+				}
+			  }
+			  expr:  {
+				id:  1
+				const_expr:  {
+				  uint64_value:  3
+				}
+			  }`,
+			wantExit:         false,
+			wantError:        false,
+			ignoreWhitespace: true,
+		},
+		{
+			name: "FormatNumberResult",
+			commands: []Cmder{
+				&evalCmd{
+					expr: "1u + 2u",
+				},
+			},
+			wantText:  "3 : uint",
+			wantExit:  false,
+			wantError: false,
+		},
+		{
+			name: "FormatStringResult",
+			commands: []Cmder{
+				&evalCmd{
+					expr: `'a' + r'b\1'`,
+				},
+			},
+			wantText:  `ab\1 : string`,
+			wantExit:  false,
+			wantError: false,
+		},
+		{
+			name: "FormatListResult",
+			commands: []Cmder{
+				&evalCmd{
+					expr: `['abc', 123, 3.14, duration('2m')]`,
+				},
+			},
+			wantText:  `["abc", 123, 3.140000, duration("120s")] : list(dyn)`,
+			wantExit:  false,
+			wantError: false,
+		},
+		{
+			name: "FormatMapResult",
+			commands: []Cmder{
+				&evalCmd{
+					expr: `{1: 123, 2: 3.14, 3: duration('2m'), 4: b'123'}`,
+				},
+			},
+			wantText:  `{1:123, 2:3.140000, 3:duration("120s"), 4:b"123"} : map(int, dyn)`,
+			wantExit:  false,
+			wantError: false,
+		},
 		{
 			name: "OptionBasic",
 			commands: []Cmder{
@@ -527,6 +605,118 @@ func TestProcess(t *testing.T) {
 			wantExit:  false,
 			wantError: false,
 		},
+		{
+			name: "OptionExtensionOptional",
+			commands: []Cmder{
+				&simpleCmd{
+					cmd: "option",
+					args: []string{
+						"--extension",
+						"optional",
+					},
+				},
+				&evalCmd{
+					expr: "optional.none().orValue('default')",
+				},
+			},
+			wantText:  "default : string",
+			wantExit:  false,
+			wantError: false,
+		},
+		{
+			name: "OptionExtensionStrings",
+			commands: []Cmder{
+				&simpleCmd{
+					cmd: "option",
+					args: []string{
+						"--extension",
+						"strings",
+					},
+				},
+				&evalCmd{
+					expr: "'test'.substring(2)",
+				},
+			},
+			wantText:  "st : string",
+			wantExit:  false,
+			wantError: false,
+		},
+		{
+			name: "OptionExtensionProtos",
+			commands: []Cmder{
+				&simpleCmd{
+					cmd: "option",
+					args: []string{
+						"--extension",
+						"protos",
+					},
+				},
+				&evalCmd{
+					expr: "proto.getExt(google.expr.proto2.test.ExampleType{}, google.expr.proto2.test.int32_ext) == 0",
+				},
+			},
+			wantText:  "true : bool",
+			wantExit:  false,
+			wantError: false,
+		},
+		{
+			name: "OptionExtensionMath",
+			commands: []Cmder{
+				&simpleCmd{
+					cmd: "option",
+					args: []string{
+						"--extension",
+						"math",
+					},
+				},
+				&evalCmd{
+					expr: "math.greatest(1,2)",
+				},
+			},
+			wantText:  "2 : int",
+			wantExit:  false,
+			wantError: false,
+		},
+		{
+			name: "OptionExtensionEncoders",
+			commands: []Cmder{
+				&simpleCmd{
+					cmd: "option",
+					args: []string{
+						"--extension",
+						"encoders",
+					},
+				},
+				&evalCmd{
+					expr: "base64.encode(b'hello')",
+				},
+			},
+			wantText:  "aGVsbG8= : string",
+			wantExit:  false,
+			wantError: false,
+		},
+		{
+			name: "OptionExtensionAll",
+			commands: []Cmder{
+				&simpleCmd{
+					cmd: "option",
+					args: []string{
+						"--extension",
+						"all",
+					},
+				},
+				&evalCmd{
+					expr: "'test'.substring(2) == 'st' && " +
+						"proto.getExt(google.expr.proto2.test.ExampleType{}, google.expr.proto2.test.int32_ext) == 0 && " +
+						"math.greatest(1,2) == 2 && " +
+						"base64.encode(b'hello') == 'aGVsbG8='",
+				},
+			},
+			wantText:  "true : bool",
+			wantExit:  false,
+			wantError: false,
+		},
+
 		{
 			name: "LoadDescriptorsError",
 			commands: []Cmder{
@@ -651,6 +841,7 @@ func TestProcess(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewEvaluator returned error: %v, wanted nil", err)
 			}
+			eval.env, _ = eval.env.Extend(cel.Types(&proto2pb.ExampleType{}, &proto2pb.ExternalMessageType{}))
 			n := len(tc.commands)
 			for _, cmd := range tc.commands[:n-1] {
 				// only need output of last command
@@ -662,11 +853,82 @@ func TestProcess(t *testing.T) {
 			if err != nil {
 				gotErr = true
 			}
-
-			if text != tc.wantText || exit != tc.wantExit || (gotErr != tc.wantError) {
+			wantText := tc.wantText
+			if tc.ignoreWhitespace {
+				text = stripWhitespace(text)
+				wantText = stripWhitespace(wantText)
+			}
+			if text != wantText || exit != tc.wantExit || (gotErr != tc.wantError) {
 				t.Errorf("For command %s got (output: '%s' exit: %v err: %v (%v)) wanted (output: '%s' exit: %v err: %v)",
 					tc.commands[n-1], text, exit, gotErr, err, tc.wantText, tc.wantExit, tc.wantError)
 			}
 		})
 	}
+}
+
+func TestProcessOptionError(t *testing.T) {
+	var testCases = []struct {
+		name     string
+		command  Cmder
+		errorMsg string
+	}{
+		{
+			name: "OptionContainerNotEnoughArgs",
+			command: &simpleCmd{
+				cmd: "option",
+				args: []string{
+					"--container",
+				},
+			},
+			errorMsg: "container: not enough arguments",
+		},
+		{
+			name: "OptionExtensionNotEnoughArgs",
+			command: &simpleCmd{
+				cmd: "option",
+				args: []string{
+					"--extension",
+				},
+			},
+			errorMsg: "extension: not enough arguments",
+		},
+		{
+			name: "OptionExtensionInvalid",
+			command: &simpleCmd{
+				cmd: "option",
+				args: []string{
+					"--extension",
+					"'bogus'",
+				},
+			},
+			errorMsg: "extension: Unknown option: 'bogus'. Available options are: ['strings', 'protos', 'math', 'encoders', 'bindings', 'optional', 'all']",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			eval, err := NewEvaluator()
+			if err != nil {
+				t.Fatalf("NewEvaluator returned error: %v, wanted nil", err)
+			}
+			_, _, err = eval.Process(tc.command)
+
+			if err == nil {
+				t.Fatalf("Expected an error processing command: %s", tc.command)
+			}
+
+			if err.Error() != tc.errorMsg {
+				t.Errorf("For command %s got (error: '%s') wanted (error: '%s')",
+					tc.command, err.Error(), tc.errorMsg)
+			}
+		})
+	}
+}
+
+func stripWhitespace(a string) string {
+	a = strings.Replace(a, " ", "", -1)
+	a = strings.Replace(a, "\n", "", -1)
+	a = strings.Replace(a, "\t", "", -1)
+	return strings.Replace(a, "\r", "", -1)
 }

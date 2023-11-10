@@ -42,7 +42,7 @@ func TestRefValueToValueRoundTrip(t *testing.T) {
 		{value: types.Duration{Duration: time.Hour}},
 		{value: types.Timestamp{Time: time.Unix(0, 0)}},
 		{value: types.IntType},
-		{value: types.NewTypeValue("CustomType")},
+		{value: types.NewOpaqueType("CustomType")},
 		{value: map[int64]int64{1: 1}},
 		{value: []any{true, "abc"}},
 		{value: &proto3pb.TestAllTypes{SingleString: "abc"}},
@@ -107,13 +107,16 @@ func TestAstToProto(t *testing.T) {
 	}
 	checked, err := AstToCheckedExpr(ast)
 	if err != nil {
-		t.Fatalf("AstToCheckeExpr(ast) failed: %v", err)
+		t.Fatalf("AstToCheckedExpr(ast) failed: %v", err)
 	}
 	ast4 := CheckedExprToAst(checked)
 	if !proto.Equal(ast4.Expr(), ast.Expr()) {
 		t.Fatalf("got ast %v, wanted %v", ast4, ast)
 	}
-	ast5 := CheckedExprToAstWithSource(checked, ast.Source())
+	ast5, err := CheckedExprToAstWithSource(checked, ast.Source())
+	if err != nil {
+		t.Fatalf("CheckedExprToAstWithSource() failed: %v", err)
+	}
 	if !proto.Equal(ast5.Expr(), ast.Expr()) {
 		t.Errorf("got expr %v, wanted %v", ast5, ast)
 	}

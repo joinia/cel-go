@@ -23,10 +23,11 @@ import (
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
+	"github.com/google/cel-go/common/functions"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
+	"github.com/google/cel-go/ext"
 	"github.com/google/cel-go/interpreter"
-	"github.com/google/cel-go/interpreter/functions"
 
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
@@ -430,7 +431,7 @@ type Evaluator struct {
 
 // NewEvaluator returns an inialized evaluator
 func NewEvaluator() (*Evaluator, error) {
-	env, err := cel.NewEnv()
+	env, err := cel.NewEnv(cel.EnableMacroCallTracking())
 	if err != nil {
 		return nil, err
 	}
@@ -679,6 +680,43 @@ func (o *containerOption) Option() cel.EnvOption {
 	return cel.Container(o.container)
 }
 
+// extensionOption implements optional for loading a specific extension into the environment (String, Math, Proto, Encoder)
+type extensionOption struct {
+	extensionType string
+	option        cel.EnvOption
+}
+
+func (o *extensionOption) String() string {
+	return fmt.Sprintf("%%option --extension '%s'", o.extensionType)
+}
+
+func (o extensionOption) Option() cel.EnvOption {
+	return o.option
+}
+
+func newExtensionOption(extType string) (*extensionOption, error) {
+	var extOption cel.EnvOption
+	extType = strings.ToLower(extType)
+	switch op := extType; op {
+	case "bindings":
+		extOption = ext.Bindings()
+	case "optional":
+		extOption = cel.OptionalTypes()
+	case "strings":
+		extOption = ext.Strings()
+	case "protos":
+		extOption = ext.Protos()
+	case "math":
+		extOption = ext.Math()
+	case "encoders":
+		extOption = ext.Encoders()
+	default:
+		return nil, fmt.Errorf("Unknown option: %s. Available options are: ['strings', 'protos', 'math', 'encoders', 'bindings', 'optional', 'all']", op)
+	}
+
+	return &extensionOption{extensionType: extType, option: extOption}, nil
+}
+
 // setOption sets a number of options on the environment. returns an error if
 // any of them fail.
 func (e *Evaluator) setOption(args []string) error {
@@ -686,17 +724,20 @@ func (e *Evaluator) setOption(args []string) error {
 	for idx := 0; idx < len(args); {
 		arg := args[idx]
 		idx++
-		if arg == "--container" {
-			if idx >= len(args) {
-				issues = append(issues, "not enough args for container")
-			}
-			container := args[idx]
+		switch arg {
+		case "--container":
+			err := e.loadContainerOption(idx, args)
 			idx++
-			err := e.AddOption(&containerOption{container: container})
 			if err != nil {
 				issues = append(issues, fmt.Sprintf("container: %v", err))
 			}
-		} else {
+		case "--extension":
+			err := e.loadExtensionOption(idx, args)
+			idx++
+			if err != nil {
+				issues = append(issues, fmt.Sprintf("extension: %v", err))
+			}
+		default:
 			issues = append(issues, fmt.Sprintf("unsupported option '%s'", arg))
 		}
 	}
@@ -704,6 +745,64 @@ func (e *Evaluator) setOption(args []string) error {
 		return errors.New(strings.Join(issues, "\n"))
 	}
 	return nil
+}
+
+func checkOptionArgs(idx int, args []string) error {
+	if idx >= len(args) {
+		return fmt.Errorf("not enough arguments")
+	}
+	return nil
+}
+
+func (e *Evaluator) loadContainerOption(idx int, args []string) error {
+	err := checkOptionArgs(idx, args)
+	if err != nil {
+		return err
+	}
+
+	container := args[idx]
+	idx++
+	err = e.AddOption(&containerOption{container: container})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *Evaluator) loadExtensionOption(idx int, args []string) error {
+	err := checkOptionArgs(idx, args)
+	if err != nil {
+		return err
+	}
+
+	argExtType := args[idx]
+	if argExtType == "all" {
+		// Load all extension types as a convenience
+		var extensionTypes = []string{"optional", "strings", "protos", "math", "encoders", "bindings"}
+		for _, val := range extensionTypes {
+			err := e.loadExtensionOptionType(val)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return e.loadExtensionOptionType(argExtType)
+}
+
+func (e *Evaluator) loadExtensionOptionType(extType string) error {
+	extensionOption, err := newExtensionOption(extType)
+	if err != nil {
+		return err
+	}
+
+	err = e.AddOption(extensionOption)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
 func loadFileDescriptorSet(path string, textfmt bool) (*descpb.FileDescriptorSet, error) {
@@ -731,14 +830,15 @@ func (e *Evaluator) loadDescriptors(args []string) error {
 	if len(args) < 1 {
 		return errors.New("expected path for load descriptors")
 	}
-	flag := ""
-	if len(args) > 1 {
-		flag = args[0]
-	}
 
 	textfmt := true
-	if flag == "--binarypb" {
-		textfmt = false
+
+	flags := args[:len(args)-1]
+
+	for _, flag := range flags {
+		if flag == "--binarypb" {
+			textfmt = false
+		}
 	}
 
 	p := args[len(args)-1]
@@ -750,15 +850,32 @@ func (e *Evaluator) loadDescriptors(args []string) error {
 	return e.AddOption(&typeOption{path: p, fds: fds})
 }
 
+// Process processes the command provided.
 func (e *Evaluator) Process(cmd Cmder) (string, bool, error) {
 	switch cmd := cmd.(type) {
+	case *compileCmd:
+		ast, err := e.Compile(cmd.expr)
+		if err != nil {
+			return "", false, fmt.Errorf("compile failed:\n%v", err)
+		}
+		cAST, err := cel.AstToCheckedExpr(ast)
+		if err != nil {
+			return "", false, fmt.Errorf("compile failed:\n%v", err)
+		}
+		return prototext.Format(cAST), false, nil
 	case *evalCmd:
 		val, resultT, err := e.Evaluate(cmd.expr)
 		if err != nil {
 			return "", false, fmt.Errorf("expr failed:\n%v", err)
 		}
 		if val != nil {
-			return fmt.Sprintf("%v : %s", val.Value(), UnparseType(resultT)), false, nil
+			t := UnparseType(resultT)
+			v, err := ext.FormatString(val, "")
+			if err != nil {
+				// Default format if type is unsupported by ext.Strings formatter.
+				return fmt.Sprintf("%v : %s", val.Value(), t), false, nil
+			}
+			return fmt.Sprintf("%s : %s", v, t), false, nil
 		}
 	case *letVarCmd:
 		var err error
@@ -813,7 +930,7 @@ func (e *Evaluator) Process(cmd Cmder) (string, bool, error) {
 	return "", false, nil
 }
 
-// Evaluate sets up a CEL evaluation using the current evaluation context.
+// Evaluate sets up a CEL evaluation using the current REPL context.
 func (e *Evaluator) Evaluate(expr string) (ref.Val, *exprpb.Type, error) {
 	env, act, err := e.applyContext()
 	if err != nil {
@@ -821,7 +938,7 @@ func (e *Evaluator) Evaluate(expr string) (ref.Val, *exprpb.Type, error) {
 	}
 
 	ast, iss := env.Compile(expr)
-	if iss != nil {
+	if iss.Err() != nil {
 		return nil, nil, iss.Err()
 	}
 
@@ -833,4 +950,17 @@ func (e *Evaluator) Evaluate(expr string) (ref.Val, *exprpb.Type, error) {
 	val, _, err := p.Eval(act)
 	// expression can be well-formed and result in an error
 	return val, ast.ResultType(), err
+}
+
+// Compile compiles the input expression using the current REPL context.
+func (e *Evaluator) Compile(expr string) (*cel.Ast, error) {
+	env, _, err := e.applyContext()
+	if err != nil {
+		return nil, err
+	}
+	ast, iss := env.Compile(expr)
+	if iss.Err() != nil {
+		return nil, iss.Err()
+	}
+	return ast, nil
 }

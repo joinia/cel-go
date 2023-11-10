@@ -21,9 +21,10 @@ import (
 	"testing"
 
 	"github.com/google/cel-go/checker"
-	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/containers"
+	"github.com/google/cel-go/common/decls"
+	"github.com/google/cel-go/common/stdlib"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/parser"
@@ -66,13 +67,9 @@ func TestAttributesAbsoluteAttr(t *testing.T) {
 	if out != types.String("success") {
 		t.Errorf("Got %v (%T), wanted success", out, out)
 	}
-	wantedMin, wantedMax := int64(1), int64(1)
-	if min, max := estimateCost(attr); min != wantedMin || max != wantedMax {
-		t.Errorf("Got cost interval [%v, %v], wanted [%v, %v]", min, max, wantedMin, wantedMax)
-	}
 }
 
-func TestAttributesAbsoluteAttr_Type(t *testing.T) {
+func TestAttributesAbsoluteAttrType(t *testing.T) {
 	reg := newTestRegistry(t)
 	attrs := NewAttributeFactory(containers.DefaultContainer, reg, reg)
 
@@ -84,10 +81,6 @@ func TestAttributesAbsoluteAttr_Type(t *testing.T) {
 	}
 	if out != types.IntType {
 		t.Errorf("Got %v, wanted success", out)
-	}
-	wantedMin, wantedMax := int64(1), int64(1)
-	if min, max := estimateCost(attr); min != wantedMin || max != wantedMax {
-		t.Errorf("Got cost interval [%v, %v], wanted [%v, %v]", min, max, wantedMin, wantedMax)
 	}
 }
 
@@ -122,10 +115,6 @@ func TestAttributesRelativeAttr(t *testing.T) {
 	}
 	if out != types.Int(42) {
 		t.Errorf("Got %v (%T), wanted 42", out, out)
-	}
-	wantedMin, wantedMax := int64(1), int64(1)
-	if min, max := estimateCost(attr); min != wantedMin || max != wantedMax {
-		t.Errorf("Got cost interval [%v, %v], wanted [%v, %v]", min, max, wantedMin, wantedMax)
 	}
 }
 
@@ -172,10 +161,6 @@ func TestAttributesRelativeAttrOneOf(t *testing.T) {
 	if out != types.Int(42) {
 		t.Errorf("Got %v (%T), wanted 42", out, out)
 	}
-	wantedMin, wantedMax := int64(1), int64(1)
-	if min, max := estimateCost(attr); min != wantedMin || max != wantedMax {
-		t.Errorf("Got cost interval [%v, %v], wanted [%v, %v]", min, max, wantedMin, wantedMax)
-	}
 }
 
 func TestAttributesRelativeAttrConditional(t *testing.T) {
@@ -221,10 +206,6 @@ func TestAttributesRelativeAttrConditional(t *testing.T) {
 	}
 	if out != types.Int(42) {
 		t.Errorf("Got %v (%T), wanted 42", out, out)
-	}
-	wantedMin, wantedMax := int64(1), int64(1)
-	if min, max := estimateCost(attr); min != wantedMin || max != wantedMax {
-		t.Errorf("Got cost interval [%v, %v], wanted [%v, %v]", min, max, wantedMin, wantedMax)
 	}
 }
 
@@ -296,10 +277,6 @@ func TestAttributesRelativeAttrRelativeQualifier(t *testing.T) {
 	if out != types.Uint(2) {
 		t.Errorf("Got %v (%T), wanted 2", out, out)
 	}
-	wantedMin, wantedMax := int64(1), int64(1)
-	if min, max := estimateCost(attr); min != wantedMin || max != wantedMax {
-		t.Errorf("Got cost interval [%v, %v], wanted [%v, %v]", min, max, wantedMin, wantedMax)
-	}
 }
 
 func TestAttributesOneofAttr(t *testing.T) {
@@ -328,10 +305,6 @@ func TestAttributesOneofAttr(t *testing.T) {
 	}
 	if out != "found" {
 		t.Errorf("Got %v, wanted 'found'", out)
-	}
-	wantedMin, wantedMax := int64(1), int64(1)
-	if min, max := estimateCost(attr); min != wantedMin || max != wantedMax {
-		t.Errorf("Got cost interval [%v, %v], wanted [%v, %v]", min, max, wantedMin, wantedMax)
 	}
 }
 
@@ -367,10 +340,6 @@ func TestAttributesConditionalAttrTrueBranch(t *testing.T) {
 	if out != int32(42) {
 		t.Errorf("Got %v (%T), wanted 42", out, out)
 	}
-	wantedMin, wantedMax := int64(1), int64(1)
-	if min, max := estimateCost(fv); min != wantedMin || max != wantedMax {
-		t.Errorf("Got cost interval [%v, %v], wanted [%v, %v]", min, max, wantedMin, wantedMax)
-	}
 }
 
 func TestAttributesConditionalAttrFalseBranch(t *testing.T) {
@@ -405,10 +374,6 @@ func TestAttributesConditionalAttrFalseBranch(t *testing.T) {
 	if out != uint(42) {
 		t.Errorf("Got %v (%T), wanted 42", out, out)
 	}
-	wantedMin, wantedMax := int64(1), int64(1)
-	if min, max := estimateCost(fv); min != wantedMin || max != wantedMax {
-		t.Errorf("Got cost interval [%v, %v], wanted [%v, %v]", min, max, wantedMin, wantedMax)
-	}
 }
 
 func TestAttributesOptional(t *testing.T) {
@@ -418,7 +383,6 @@ func TestAttributesOptional(t *testing.T) {
 		t.Fatalf("")
 	}
 	attrs := NewAttributeFactory(cont, reg, reg)
-
 	tests := []struct {
 		varName  string
 		quals    []any
@@ -701,7 +665,7 @@ func TestAttributesOptional(t *testing.T) {
 			optQuals: []any{
 				makeOptQualifier(t,
 					attrs,
-					&exprpb.Type{TypeKind: &exprpb.Type_MessageType{MessageType: "google.expr.proto3.test.TestAllTypes"}},
+					types.NewObjectType("google.expr.proto3.test.TestAllTypes"),
 					103,
 					"single_int32",
 				),
@@ -725,7 +689,7 @@ func TestAttributesOptional(t *testing.T) {
 			varName: "a",
 			quals:   []any{},
 			vars:    map[string]any{},
-			err:     errors.New("no such attribute: id: 1, names: [a]"),
+			err:     errors.New("no such attribute(s): a"),
 		},
 	}
 	for i, tst := range tests {
@@ -774,24 +738,15 @@ func TestAttributesConditionalAttrErrorUnknown(t *testing.T) {
 	if err == nil {
 		t.Errorf("Got %v, wanted error", out)
 	}
-	wantedMin, wantedMax := int64(1), int64(1)
-	if min, max := estimateCost(fv); min != wantedMin || max != wantedMax {
-		t.Errorf("Got cost interval [%v, %v], wanted [%v, %v]", min, max, wantedMin, wantedMax)
-	}
 
 	// unk ? a : b
-	condUnk := attrs.ConditionalAttribute(1, NewConstValue(0, types.Unknown{1}), tv, fv)
+	condUnk := attrs.ConditionalAttribute(1, NewConstValue(0, types.NewUnknown(1, nil)), tv, fv)
 	out, err = condUnk.Resolve(EmptyActivation())
 	if err != nil {
 		t.Fatal(err)
 	}
-	unk, ok := out.(types.Unknown)
-	if !ok || !types.IsUnknown(unk) {
+	if !types.IsUnknown(out.(ref.Val)) {
 		t.Errorf("Got %v, wanted unknown", out)
-	}
-	wantedMin, wantedMax = int64(1), int64(1)
-	if min, max := estimateCost(fv); min != wantedMin || max != wantedMax {
-		t.Errorf("Got cost interval [%v, %v], wanted [%v, %v]", min, max, wantedMin, wantedMax)
 	}
 }
 
@@ -803,7 +758,7 @@ func BenchmarkResolverFieldQualifier(b *testing.B) {
 			},
 		},
 	}
-	reg := newBenchRegistry(b, msg)
+	reg := newTestRegistry(b, msg)
 	attrs := NewAttributeFactory(containers.DefaultContainer, reg, reg)
 	vars, _ := NewActivation(map[string]any{
 		"msg": msg,
@@ -817,8 +772,8 @@ func BenchmarkResolverFieldQualifier(b *testing.B) {
 	if !found {
 		b.Fatal("FindType() could not find NestedMessage")
 	}
-	attr.AddQualifier(makeQualifier(b, attrs, opType.GetType(), 2, "single_nested_message"))
-	attr.AddQualifier(makeQualifier(b, attrs, fieldType.GetType(), 3, "bb"))
+	attr.AddQualifier(makeQualifier(b, attrs, testExprTypeToType(b, opType), 2, "single_nested_message"))
+	attr.AddQualifier(makeQualifier(b, attrs, testExprTypeToType(b, fieldType), 3, "bb"))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := attr.Resolve(vars)
@@ -840,11 +795,7 @@ func TestResolverCustomQualifier(t *testing.T) {
 		"msg": msg,
 	})
 	attr := attrs.AbsoluteAttribute(1, "msg")
-	fieldType := &exprpb.Type{
-		TypeKind: &exprpb.Type_MessageType{
-			MessageType: "google.expr.proto3.test.TestAllTypes.NestedMessage",
-		},
-	}
+	fieldType := types.NewObjectType("google.expr.proto3.test.TestAllTypes.NestedMessage")
 	qualBB := makeQualifier(t, attrs, fieldType, 2, "bb")
 	attr.AddQualifier(qualBB)
 	out, err := attr.Resolve(vars)
@@ -853,10 +804,6 @@ func TestResolverCustomQualifier(t *testing.T) {
 	}
 	if out != int32(123) {
 		t.Errorf("Got %v, wanted 123", out)
-	}
-	wantedMin, wantedMax := int64(1), int64(1)
-	if min, max := estimateCost(attr); min != wantedMin || max != wantedMax {
-		t.Errorf("Got cost interval [%v, %v], wanted [%v, %v]", min, max, wantedMin, wantedMax)
 	}
 }
 
@@ -897,7 +844,7 @@ func TestAttributeMissingMsgUnknownField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, isUnk := out.(types.Unknown)
+	_, isUnk := out.(*types.Unknown)
 	if !isUnk {
 		t.Errorf("got %v, wanted unknown value", out)
 	}
@@ -906,19 +853,20 @@ func TestAttributeMissingMsgUnknownField(t *testing.T) {
 func TestAttributeStateTracking(t *testing.T) {
 	var tests = []struct {
 		expr  string
-		env   []*exprpb.Decl
-		in    map[string]any
+		vars  []*decls.VariableDecl
+		in    any
 		out   ref.Val
+		attrs []*AttributePattern
 		state map[int64]any
 	}{
 		{
 			expr: `[{"field": true}][0].field`,
-			env:  []*exprpb.Decl{},
+			vars: []*decls.VariableDecl{},
 			in:   map[string]any{},
 			out:  types.True,
 			state: map[int64]any{
-				// overall expression
-				1: true,
+				// [{"field": true}]
+				1: []ref.Val{types.DefaultTypeAdapter.NativeToValue(map[ref.Val]ref.Val{types.String("field"): types.True})},
 				// [{"field": true}][0]
 				6: map[ref.Val]ref.Val{types.String("field"): types.True},
 				// [{"field": true}][0].field
@@ -927,10 +875,10 @@ func TestAttributeStateTracking(t *testing.T) {
 		},
 		{
 			expr: `a[1]['two']`,
-			env: []*exprpb.Decl{
-				decls.NewVar("a", decls.NewMapType(
-					decls.Int,
-					decls.NewMapType(decls.String, decls.Bool))),
+			vars: []*decls.VariableDecl{
+				decls.NewVariable("a", types.NewMapType(
+					types.IntType,
+					types.NewMapType(types.StringType, types.BoolType))),
 			},
 			in: map[string]any{
 				"a": map[int64]any{
@@ -941,8 +889,6 @@ func TestAttributeStateTracking(t *testing.T) {
 			},
 			out: types.True,
 			state: map[int64]any{
-				// overall expression
-				1: true,
 				// a[1]
 				2: map[string]bool{"two": true},
 				// a[1]["two"]
@@ -951,10 +897,10 @@ func TestAttributeStateTracking(t *testing.T) {
 		},
 		{
 			expr: `a[1][2][3]`,
-			env: []*exprpb.Decl{
-				decls.NewVar("a", decls.NewMapType(
-					decls.Int,
-					decls.NewMapType(decls.Dyn, decls.Dyn))),
+			vars: []*decls.VariableDecl{
+				decls.NewVariable("a", types.NewMapType(
+					types.IntType,
+					types.NewMapType(types.DynType, types.DynType))),
 			},
 			in: map[string]any{
 				"a": map[int64]any{
@@ -966,8 +912,6 @@ func TestAttributeStateTracking(t *testing.T) {
 			},
 			out: types.String("dex"),
 			state: map[int64]any{
-				// overall expression
-				1: "dex",
 				// a[1]
 				2: map[int64]any{
 					1: 0,
@@ -981,10 +925,10 @@ func TestAttributeStateTracking(t *testing.T) {
 		},
 		{
 			expr: `a[1][2][a[1][1]]`,
-			env: []*exprpb.Decl{
-				decls.NewVar("a", decls.NewMapType(
-					decls.Int,
-					decls.NewMapType(decls.Dyn, decls.Dyn))),
+			vars: []*decls.VariableDecl{
+				decls.NewVariable("a", types.NewMapType(
+					types.IntType,
+					types.NewMapType(types.DynType, types.DynType))),
 			},
 			in: map[string]any{
 				"a": map[int64]any{
@@ -996,8 +940,6 @@ func TestAttributeStateTracking(t *testing.T) {
 			},
 			out: types.String("index"),
 			state: map[int64]any{
-				// overall expression
-				1: "index",
 				// a[1]
 				2: map[int64]any{
 					1: 0,
@@ -1017,12 +959,146 @@ func TestAttributeStateTracking(t *testing.T) {
 				10: int64(0),
 			},
 		},
+		{
+			expr: `true ? a : b`,
+			vars: []*decls.VariableDecl{
+				decls.NewVariable("a", types.StringType),
+				decls.NewVariable("b", types.StringType),
+			},
+			in: map[string]any{
+				"a": "hello",
+				"b": "world",
+			},
+			out: types.String("hello"),
+			state: map[int64]any{
+				// 'hello'
+				2: types.String("hello"),
+			},
+		},
+		{
+			expr: `(a.size() != 0 ? a : b)[0]`,
+			vars: []*decls.VariableDecl{
+				decls.NewVariable("a", types.NewListType(types.StringType)),
+				decls.NewVariable("b", types.NewListType(types.StringType)),
+			},
+			in: map[string]any{
+				"a": []string{"hello", "world"},
+				"b": []string{"world", "hello"},
+			},
+			out: types.String("hello"),
+			state: map[int64]any{
+				// ["hello", "world"]
+				1: types.DefaultTypeAdapter.NativeToValue([]string{"hello", "world"}),
+				// ["hello", "world"].size() // 2
+				2: types.Int(2),
+				// ["hello", "world"].size() != 0
+				3: types.True,
+				// constant 0
+				4: types.IntZero,
+				// 'hello'
+				8: types.String("hello"),
+			},
+		},
+		{
+			expr: `a.?b.c`,
+			vars: []*decls.VariableDecl{
+				decls.NewVariable("a", types.NewMapType(types.StringType, types.NewMapType(types.StringType, types.StringType))),
+			},
+			in: map[string]any{
+				"a": map[string]any{"b": map[string]any{"c": "world"}},
+			},
+			out: types.OptionalOf(types.String("world")),
+			state: map[int64]any{
+				// {c: world}
+				3: types.DefaultTypeAdapter.NativeToValue(map[string]string{"c": "world"}),
+				// 'world'
+				4: types.OptionalOf(types.String("world")),
+			},
+		},
+		{
+			expr: `a.?b.c`,
+			vars: []*decls.VariableDecl{
+				decls.NewVariable("a", types.NewMapType(types.StringType, types.NewMapType(types.StringType, types.StringType))),
+			},
+			in: map[string]any{
+				"a": map[string]any{"b": map[string]string{"random": "value"}},
+			},
+			out: types.OptionalNone,
+			state: map[int64]any{
+				// {random: value}
+				3: types.DefaultTypeAdapter.NativeToValue(map[string]string{"random": "value"}),
+				// optional.none()
+				4: types.OptionalNone,
+			},
+		},
+		{
+			expr: `a.b.c`,
+			vars: []*decls.VariableDecl{
+				decls.NewVariable("a", types.NewMapType(types.StringType, types.NewMapType(types.StringType, types.StringType))),
+			},
+			in: map[string]any{
+				"a": map[string]any{"b": map[string]any{"c": "world"}},
+			},
+			out: types.String("world"),
+			state: map[int64]any{
+				// {c: world}
+				2: types.DefaultTypeAdapter.NativeToValue(map[string]string{"c": "world"}),
+				// 'world'
+				3: types.String("world"),
+			},
+		},
+		{
+			expr: `m[has(a.b)]`,
+			vars: []*decls.VariableDecl{
+				decls.NewVariable("a", types.NewMapType(types.StringType, types.StringType)),
+				decls.NewVariable("m", types.NewMapType(types.BoolType, types.StringType)),
+			},
+			in: map[string]any{
+				"a": map[string]string{"b": ""},
+				"m": map[bool]string{true: "world"},
+			},
+			out: types.String("world"),
+		},
+		{
+			expr: `m[?has(a.b)]`,
+			vars: []*decls.VariableDecl{
+				decls.NewVariable("a", types.NewMapType(types.StringType, types.StringType)),
+				decls.NewVariable("m", types.NewMapType(types.BoolType, types.StringType)),
+			},
+			in: map[string]any{
+				"a": map[string]string{"b": ""},
+				"m": map[bool]string{true: "world"},
+			},
+			out: types.OptionalOf(types.String("world")),
+		},
+		{
+			expr: `m[?has(a.b.c)]`,
+			vars: []*decls.VariableDecl{
+				decls.NewVariable("a", types.NewMapType(types.StringType, types.DynType)),
+				decls.NewVariable("m", types.NewMapType(types.BoolType, types.StringType)),
+			},
+			in: partialActivation(
+				map[string]any{
+					"a": map[string]any{},
+					"m": map[bool]string{true: "world"},
+				},
+				NewAttributePattern("a").QualString("b"),
+			),
+			out: types.NewUnknown(5, types.QualifyAttribute[string](types.NewAttributeTrail("a"), "b")),
+		},
 	}
 	for _, test := range tests {
 		tc := test
 		t.Run(tc.expr, func(t *testing.T) {
 			src := common.NewTextSource(tc.expr)
-			parsed, errors := parser.Parse(src)
+			p, err := parser.NewParser(
+				parser.EnableOptionalSyntax(true),
+				parser.Macros(parser.AllMacros...),
+			)
+			if err != nil {
+				t.Fatalf("parser.NewParser() failed: %v", err)
+			}
+			parsed, errors := p.Parse(src)
 			if len(errors.GetErrors()) != 0 {
 				t.Fatalf(errors.ToDisplayString())
 			}
@@ -1032,16 +1108,27 @@ func TestAttributeStateTracking(t *testing.T) {
 			if err != nil {
 				t.Fatalf("checker.NewEnv() failed: %v", err)
 			}
-			env.Add(checker.StandardDeclarations()...)
-			if tc.env != nil {
-				env.Add(tc.env...)
+			env.AddFunctions(stdlib.Functions()...)
+			env.AddFunctions(optionalDecls(t)...)
+			if tc.vars != nil {
+				env.AddIdents(tc.vars...)
 			}
 			checked, errors := checker.Check(parsed, src, env)
 			if len(errors.GetErrors()) != 0 {
 				t.Fatalf(errors.ToDisplayString())
 			}
-			attrs := NewAttributeFactory(cont, reg, reg)
-			interp := NewStandardInterpreter(cont, reg, reg, attrs)
+			in, err := NewActivation(tc.in)
+			if err != nil {
+				t.Fatalf("NewActivation(%v) failed: %v", tc.in, err)
+			}
+			var attrs AttributeFactory
+			_, isPartial := in.(PartialActivation)
+			if isPartial {
+				attrs = NewPartialAttributeFactory(cont, reg, reg)
+			} else {
+				attrs = NewAttributeFactory(cont, reg, reg)
+			}
+			interp := newStandardInterpreter(t, cont, reg, reg, attrs)
 			// Show that program planning will now produce an error.
 			st := NewEvalState()
 			i, err := interp.NewInterpretable(checked, Optimize(), Observe(EvalStateObserver(st)))
@@ -1051,18 +1138,26 @@ func TestAttributeStateTracking(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			in, _ := NewActivation(tc.in)
 			out := i.Eval(in)
-			if tc.out.Equal(out) != types.True {
-				t.Errorf("got %v, wanted %v", out.Value(), tc.out)
+			if types.IsUnknown(tc.out) && types.IsUnknown(out) {
+				if !reflect.DeepEqual(tc.out, out) {
+					t.Errorf("got %v, wanted %v", out, tc.out)
+				}
+			} else if tc.out.Equal(out) != types.True {
+				t.Errorf("got %v, wanted %v", out, tc.out)
 			}
 			for id, val := range tc.state {
 				stVal, found := st.Value(id)
 				if !found {
+					for _, id := range st.IDs() {
+						v, _ := st.Value(id)
+						t.Error(id, v)
+					}
 					t.Errorf("state not found for %d=%v", id, val)
 					continue
 				}
-				if !reflect.DeepEqual(stVal.Value(), val) {
+				wantStVal := types.DefaultTypeAdapter.NativeToValue(val)
+				if wantStVal.Equal(stVal) != types.True {
 					t.Errorf("got %v, wanted %v for id: %d", stVal.Value(), val, id)
 				}
 			}
@@ -1071,7 +1166,7 @@ func TestAttributeStateTracking(t *testing.T) {
 }
 
 func BenchmarkResolverCustomQualifier(b *testing.B) {
-	reg := newBenchRegistry(b)
+	reg := newTestRegistry(b)
 	attrs := &custAttrFactory{
 		AttributeFactory: NewAttributeFactory(containers.DefaultContainer, reg, reg),
 	}
@@ -1082,11 +1177,7 @@ func BenchmarkResolverCustomQualifier(b *testing.B) {
 		"msg": msg,
 	})
 	attr := attrs.AbsoluteAttribute(1, "msg")
-	fieldType := &exprpb.Type{
-		TypeKind: &exprpb.Type_MessageType{
-			MessageType: "google.expr.proto3.test.TestAllTypes.NestedMessage",
-		},
-	}
+	fieldType := types.NewObjectType("google.expr.proto3.test.TestAllTypes.NestedMessage")
 	qualBB := makeQualifier(b, attrs, fieldType, 2, "bb")
 	attr.AddQualifier(qualBB)
 	for i := 0; i < b.N; i++ {
@@ -1098,9 +1189,14 @@ type custAttrFactory struct {
 	AttributeFactory
 }
 
-func (r *custAttrFactory) NewQualifier(objType *exprpb.Type, qualID int64, val any, opt bool) (Qualifier, error) {
-	if objType.GetMessageType() == "google.expr.proto3.test.TestAllTypes.NestedMessage" {
-		return &nestedMsgQualifier{id: qualID, field: val.(string)}, nil
+func (r *custAttrFactory) NewQualifier(objType *types.Type, qualID int64, val any, opt bool) (Qualifier, error) {
+	if objType.Kind() == types.StructKind && objType.TypeName() == "google.expr.proto3.test.TestAllTypes.NestedMessage" {
+		switch v := val.(type) {
+		case string:
+			return &nestedMsgQualifier{id: qualID, field: v, opt: opt}, nil
+		case types.String:
+			return &nestedMsgQualifier{id: qualID, field: string(v), opt: opt}, nil
+		}
 	}
 	return r.AttributeFactory.NewQualifier(objType, qualID, val, opt)
 }
@@ -1108,10 +1204,15 @@ func (r *custAttrFactory) NewQualifier(objType *exprpb.Type, qualID int64, val a
 type nestedMsgQualifier struct {
 	id    int64
 	field string
+	opt   bool
 }
 
 func (q *nestedMsgQualifier) ID() int64 {
 	return q.id
+}
+
+func (q *nestedMsgQualifier) IsOptional() bool {
+	return q.opt
 }
 
 func (q *nestedMsgQualifier) Qualify(vars Activation, obj any) (any, error) {
@@ -1127,15 +1228,6 @@ func (q *nestedMsgQualifier) QualifyIfPresent(vars Activation, obj any, presence
 	return pb.GetBb(), true, nil
 }
 
-func (q *nestedMsgQualifier) IsOptional() bool {
-	return false
-}
-
-// Cost implements the Coster interface method. It returns zero for testing purposes.
-func (q *nestedMsgQualifier) Cost() (min, max int64) {
-	return 0, 0
-}
-
 func addQualifier(t testing.TB, attr Attribute, qual Qualifier) Attribute {
 	t.Helper()
 	_, err := attr.AddQualifier(qual)
@@ -1145,7 +1237,7 @@ func addQualifier(t testing.TB, attr Attribute, qual Qualifier) Attribute {
 	return attr
 }
 
-func makeQualifier(t testing.TB, attrs AttributeFactory, fieldType *exprpb.Type, qualID int64, val any) Qualifier {
+func makeQualifier(t testing.TB, attrs AttributeFactory, fieldType *types.Type, qualID int64, val any) Qualifier {
 	t.Helper()
 	qual, err := attrs.NewQualifier(fieldType, qualID, val, false)
 	if err != nil {
@@ -1154,7 +1246,7 @@ func makeQualifier(t testing.TB, attrs AttributeFactory, fieldType *exprpb.Type,
 	return qual
 }
 
-func makeOptQualifier(t testing.TB, attrs AttributeFactory, fieldType *exprpb.Type, qualID int64, val any) Qualifier {
+func makeOptQualifier(t testing.TB, attrs AttributeFactory, fieldType *types.Type, qualID int64, val any) Qualifier {
 	t.Helper()
 	qual, err := attrs.NewQualifier(fieldType, qualID, val, true)
 	if err != nil {
@@ -1168,6 +1260,15 @@ func findField(t testing.TB, reg ref.TypeRegistry, typeName, field string) *ref.
 	ft, found := reg.FindFieldType(typeName, field)
 	if !found {
 		t.Fatalf("reg.FindFieldType(%v, %v) failed", typeName, field)
+	}
+	return ft
+}
+
+func testExprTypeToType(t testing.TB, fieldType *exprpb.Type) *types.Type {
+	t.Helper()
+	ft, err := types.ExprTypeToType(fieldType)
+	if err != nil {
+		t.Fatalf("types.ExprTypeToType() failed: %v", err)
 	}
 	return ft
 }

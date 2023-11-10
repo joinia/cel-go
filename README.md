@@ -68,7 +68,7 @@ env, err := cel.NewEnv(
 )
 ```
 
-That's it. The environment is ready to be use for parsing and type-checking.
+That's it. The environment is ready to be used for parsing and type-checking.
 CEL supports all the usual primitive types in addition to lists, maps, as well
 as first-class support for JSON and Protocol Buffers.
 
@@ -134,7 +134,7 @@ these features are exposed via macros in CEL.
 ### Evaluate
 
 Now, evaluate for fun and profit. The evaluation is thread-safe and side-effect
-free. Many different inputs can be send to the same `cel.Program` and if fields
+free. Many different inputs can be sent to the same `cel.Program` and if fields
 are present in the input, but not referenced in the expression, they are
 ignored.
 

@@ -1,7 +1,7 @@
-// Code generated from ./Commands.g4 by ANTLR 4.10.1. DO NOT EDIT.
+// Code generated from ./Commands.g4 by ANTLR 4.12.0. DO NOT EDIT.
 
 package parser // Commands
-import "github.com/antlr/antlr4/runtime/Go/antlr"
+import "github.com/antlr/antlr4/runtime/Go/antlr/v4"
 
 // CommandsListener is a complete listener for a parse tree produced by CommandsParser.
 type CommandsListener interface {
@@ -12,6 +12,9 @@ type CommandsListener interface {
 
 	// EnterCommand is called when entering the command production.
 	EnterCommand(c *CommandContext)
+
+	// EnterHelp is called when entering the help production.
+	EnterHelp(c *HelpContext)
 
 	// EnterLet is called when entering the let production.
 	EnterLet(c *LetContext)
@@ -36,6 +39,9 @@ type CommandsListener interface {
 
 	// EnterEmpty is called when entering the empty production.
 	EnterEmpty(c *EmptyContext)
+
+	// EnterCompile is called when entering the compile production.
+	EnterCompile(c *CompileContext)
 
 	// EnterExprCmd is called when entering the exprCmd production.
 	EnterExprCmd(c *ExprCmdContext)
@@ -82,17 +88,17 @@ type CommandsListener interface {
 	// EnterNegate is called when entering the Negate production.
 	EnterNegate(c *NegateContext)
 
-	// EnterSelectOrCall is called when entering the SelectOrCall production.
-	EnterSelectOrCall(c *SelectOrCallContext)
+	// EnterMemberCall is called when entering the MemberCall production.
+	EnterMemberCall(c *MemberCallContext)
+
+	// EnterSelect is called when entering the Select production.
+	EnterSelect(c *SelectContext)
 
 	// EnterPrimaryExpr is called when entering the PrimaryExpr production.
 	EnterPrimaryExpr(c *PrimaryExprContext)
 
 	// EnterIndex is called when entering the Index production.
 	EnterIndex(c *IndexContext)
-
-	// EnterCreateMessage is called when entering the CreateMessage production.
-	EnterCreateMessage(c *CreateMessageContext)
 
 	// EnterIdentOrGlobalCall is called when entering the IdentOrGlobalCall production.
 	EnterIdentOrGlobalCall(c *IdentOrGlobalCallContext)
@@ -106,17 +112,29 @@ type CommandsListener interface {
 	// EnterCreateStruct is called when entering the CreateStruct production.
 	EnterCreateStruct(c *CreateStructContext)
 
+	// EnterCreateMessage is called when entering the CreateMessage production.
+	EnterCreateMessage(c *CreateMessageContext)
+
 	// EnterConstantLiteral is called when entering the ConstantLiteral production.
 	EnterConstantLiteral(c *ConstantLiteralContext)
 
 	// EnterExprList is called when entering the exprList production.
 	EnterExprList(c *ExprListContext)
 
+	// EnterListInit is called when entering the listInit production.
+	EnterListInit(c *ListInitContext)
+
 	// EnterFieldInitializerList is called when entering the fieldInitializerList production.
 	EnterFieldInitializerList(c *FieldInitializerListContext)
 
+	// EnterOptField is called when entering the optField production.
+	EnterOptField(c *OptFieldContext)
+
 	// EnterMapInitializerList is called when entering the mapInitializerList production.
 	EnterMapInitializerList(c *MapInitializerListContext)
+
+	// EnterOptExpr is called when entering the optExpr production.
+	EnterOptExpr(c *OptExprContext)
 
 	// EnterInt is called when entering the Int production.
 	EnterInt(c *IntContext)
@@ -148,6 +166,9 @@ type CommandsListener interface {
 	// ExitCommand is called when exiting the command production.
 	ExitCommand(c *CommandContext)
 
+	// ExitHelp is called when exiting the help production.
+	ExitHelp(c *HelpContext)
+
 	// ExitLet is called when exiting the let production.
 	ExitLet(c *LetContext)
 
@@ -171,6 +192,9 @@ type CommandsListener interface {
 
 	// ExitEmpty is called when exiting the empty production.
 	ExitEmpty(c *EmptyContext)
+
+	// ExitCompile is called when exiting the compile production.
+	ExitCompile(c *CompileContext)
 
 	// ExitExprCmd is called when exiting the exprCmd production.
 	ExitExprCmd(c *ExprCmdContext)
@@ -217,17 +241,17 @@ type CommandsListener interface {
 	// ExitNegate is called when exiting the Negate production.
 	ExitNegate(c *NegateContext)
 
-	// ExitSelectOrCall is called when exiting the SelectOrCall production.
-	ExitSelectOrCall(c *SelectOrCallContext)
+	// ExitMemberCall is called when exiting the MemberCall production.
+	ExitMemberCall(c *MemberCallContext)
+
+	// ExitSelect is called when exiting the Select production.
+	ExitSelect(c *SelectContext)
 
 	// ExitPrimaryExpr is called when exiting the PrimaryExpr production.
 	ExitPrimaryExpr(c *PrimaryExprContext)
 
 	// ExitIndex is called when exiting the Index production.
 	ExitIndex(c *IndexContext)
-
-	// ExitCreateMessage is called when exiting the CreateMessage production.
-	ExitCreateMessage(c *CreateMessageContext)
 
 	// ExitIdentOrGlobalCall is called when exiting the IdentOrGlobalCall production.
 	ExitIdentOrGlobalCall(c *IdentOrGlobalCallContext)
@@ -241,17 +265,29 @@ type CommandsListener interface {
 	// ExitCreateStruct is called when exiting the CreateStruct production.
 	ExitCreateStruct(c *CreateStructContext)
 
+	// ExitCreateMessage is called when exiting the CreateMessage production.
+	ExitCreateMessage(c *CreateMessageContext)
+
 	// ExitConstantLiteral is called when exiting the ConstantLiteral production.
 	ExitConstantLiteral(c *ConstantLiteralContext)
 
 	// ExitExprList is called when exiting the exprList production.
 	ExitExprList(c *ExprListContext)
 
+	// ExitListInit is called when exiting the listInit production.
+	ExitListInit(c *ListInitContext)
+
 	// ExitFieldInitializerList is called when exiting the fieldInitializerList production.
 	ExitFieldInitializerList(c *FieldInitializerListContext)
 
+	// ExitOptField is called when exiting the optField production.
+	ExitOptField(c *OptFieldContext)
+
 	// ExitMapInitializerList is called when exiting the mapInitializerList production.
 	ExitMapInitializerList(c *MapInitializerListContext)
+
+	// ExitOptExpr is called when exiting the optExpr production.
+	ExitOptExpr(c *OptExprContext)
 
 	// ExitInt is called when exiting the Int production.
 	ExitInt(c *IntContext)

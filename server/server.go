@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 
@@ -131,7 +130,7 @@ func (s *ConformanceServer) Eval(ctx context.Context, in *confpb.EvalRequest) (*
 
 // appendErrors converts the errors from errs to Status messages
 // and appends them to the list of issues.
-func appendErrors(errs []common.Error, issues *[]*statuspb.Status) {
+func appendErrors(errs []*cel.Error, issues *[]*statuspb.Status) {
 	for _, e := range errs {
 		status := ErrToStatus(e, confpb.IssueDetails_ERROR)
 		*issues = append(*issues, status)
@@ -139,10 +138,10 @@ func appendErrors(errs []common.Error, issues *[]*statuspb.Status) {
 }
 
 // ErrToStatus converts an Error to a Status message with the given severity.
-func ErrToStatus(e common.Error, severity confpb.IssueDetails_Severity) *statuspb.Status {
+func ErrToStatus(e *cel.Error, severity confpb.IssueDetails_Severity) *statuspb.Status {
 	detail := &confpb.IssueDetails{
 		Severity: severity,
-		Position: &exprpb.SourcePosition{
+		Position: &confpb.SourcePosition{
 			Line:   int32(e.Location.Line()),
 			Column: int32(e.Location.Column()),
 		},
@@ -189,7 +188,7 @@ func RefValueToExprValue(res ref.Val, err error) (*exprpb.ExprValue, error) {
 }
 
 // ExprValueToRefValue converts between exprpb.ExprValue and ref.Val.
-func ExprValueToRefValue(adapter ref.TypeAdapter, ev *exprpb.ExprValue) (ref.Val, error) {
+func ExprValueToRefValue(adapter types.Adapter, ev *exprpb.ExprValue) (ref.Val, error) {
 	switch ev.Kind.(type) {
 	case *exprpb.ExprValue_Value:
 		return cel.ValueToRefValue(adapter, ev.GetValue())
@@ -203,7 +202,14 @@ func ExprValueToRefValue(adapter ref.TypeAdapter, ev *exprpb.ExprValue) (ref.Val
 		// TODO(jimlarson) make a convention for this.
 		return types.NewErr("XXX add details later"), nil
 	case *exprpb.ExprValue_Unknown:
-		return types.Unknown(ev.GetUnknown().Exprs), nil
+		var unk *types.Unknown
+		for _, id := range ev.GetUnknown().GetExprs() {
+			if unk == nil {
+				unk = types.NewUnknown(id, nil)
+			}
+			unk = types.MergeUnknowns(types.NewUnknown(id, nil), unk)
+		}
+		return unk, nil
 	}
 	return nil, invalidArgument("unknown ExprValue kind")
 }
